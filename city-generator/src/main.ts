@@ -1,5 +1,6 @@
 import './style.css'
 import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
   <div id="display"></div>
@@ -15,9 +16,11 @@ class Main {
     },
   ) {
     const scene = new THREE.Scene();
+    const renderer = new THREE.WebGLRenderer();
+
     const cameraSize = parameters.size * 2;
     const camera = new THREE.OrthographicCamera(-cameraSize, cameraSize, cameraSize, -cameraSize, 1, 1000);
-    const renderer = new THREE.WebGLRenderer();
+    const controls = new OrbitControls(camera, renderer.domElement);
 
     renderer.setSize(container.offsetWidth, container.offsetHeight);
     container.appendChild(renderer.domElement);
