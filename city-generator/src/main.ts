@@ -15,6 +15,9 @@ interface AssetMask {
 
 class Main {
   scene: THREE.Scene;
+  camera: THREE.OrthographicCamera;
+  renderer: THREE.WebGLRenderer;
+  size: number;
 
   constructor(
     container: HTMLDivElement,
@@ -32,27 +35,49 @@ class Main {
     },
   ) {
     this.scene = new THREE.Scene();
-    const renderer = new THREE.WebGLRenderer();
+    this.size = parameters.size;
+    this.renderer = new THREE.WebGLRenderer();
 
-    const cameraSize = parameters.size * 2;
-    const camera = new THREE.OrthographicCamera(-cameraSize, cameraSize, cameraSize, -cameraSize, 1, 500);
-    const controls = new OrbitControls(camera, renderer.domElement);
+    const { size, renderer, addPoint } = this;
+    const aspect = container.offsetWidth / container.offsetHeight;
+    this.camera = new THREE.OrthographicCamera(-size * aspect, size * aspect, size, -size, 1, 1000);
+
+    const controls = new OrbitControls(this.camera, renderer.domElement);
     controls.enableRotate = false;
-    camera.position.z = cameraSize / 2;
+    this.camera.position.z = this.size;
     
+    renderer.setPixelRatio(aspect);
     renderer.setSize(container.offsetWidth, container.offsetHeight);
     container.appendChild(renderer.domElement);
 
-    this.addPoint(new Node(1, 1));
-    this.addPoint(new Node(15, 15));
+    addPoint(new Node(1, 1));
+    addPoint(new Node(15, 15));
 
-    const animate = () => {
-      requestAnimationFrame( animate );
-      
-      renderer.render(this.scene, camera)
-    }
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const el = entry.target satisfies HTMLDivElement;
 
-    animate();
+        const { offsetWidth, offsetHeight } = el;
+        const aspect = offsetWidth / offsetHeight;
+        const { camera, renderer, size } = this;
+
+        camera.left = -size * aspect;
+        camera.right = size * aspect;
+
+        camera.updateProjectionMatrix();
+
+        renderer.setSize(offsetWidth, offsetHeight);
+        this.animate();
+      }
+    })    
+    resizeObserver.observe(container);
+    
+    this.animate();
+  }
+
+  animate = () => {
+    requestAnimationFrame( this.animate );
+    this.renderer.render(this.scene, this.camera)
   }
 
   addPoint = (node: Node) => {
