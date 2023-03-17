@@ -1,47 +1,68 @@
 import './style.css'
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls';
 
-document.querySelector<HTMLDivElement>('#app')!.innerHTML = `
+document.querySelector<HTMLDivElement>('#app').innerHTML = `
   <div id="display"></div>
 `
 
+interface AssetMask {
+  imageUrl: string,
+  wieght: number,
+  minCount?: number,
+  maxCount?: number,
+}
+
 class Main {
+  scene: THREE.Scene;
+
   constructor(
     container: HTMLDivElement,
     private parameters: {
       size: number,
       roadDensity: number,
       entryRoadCount: number,
+      isWaterFront: boolean,
+      assetsMask?: {
+        roads: AssetMask[],
+        buildings: AssetMask[],
+        walls: AssetMask[],
+        environment: AssetMask[],
+      },
     },
   ) {
-    const scene = new THREE.Scene();
+    this.scene = new THREE.Scene();
     const renderer = new THREE.WebGLRenderer();
 
     const cameraSize = parameters.size * 2;
-    const camera = new THREE.OrthographicCamera(-cameraSize, cameraSize, cameraSize, -cameraSize, 1, 1000);
+    const camera = new THREE.OrthographicCamera(-cameraSize, cameraSize, cameraSize, -cameraSize, 1, 500);
     const controls = new OrbitControls(camera, renderer.domElement);
-
+    controls.enableRotate = false;
+    camera.position.z = cameraSize / 2;
+    
     renderer.setSize(container.offsetWidth, container.offsetHeight);
     container.appendChild(renderer.domElement);
 
-    const geometry = new THREE.BoxGeometry( 1, 1, 1 );
-    const material = new THREE.MeshBasicMaterial( { color: 0x00ff00 } );
-    const cube = new THREE.Mesh( geometry, material );
-    scene.add( cube );
+    this.addPoint(new Node(1, 1));
+    this.addPoint(new Node(15, 15));
 
-    camera.position.z = 5;
-
-    function animate() {
+    const animate = () => {
       requestAnimationFrame( animate );
-
-      cube.rotation.x += 0.01;
-      cube.rotation.y += 0.01;
-
-      renderer.render( scene, camera );
+      
+      renderer.render(this.scene, camera)
     }
 
     animate();
+  }
+
+  addPoint = (node: Node) => {
+    const { x, y } = node.getPosition();
+
+    const geometry = new THREE.SphereGeometry( 1, 32, 16 );
+    const material = new THREE.MeshBasicMaterial( { color: 0xffff00 } );
+    const sphere = new THREE.Mesh( geometry, material );
+    sphere.position.set(x, y, 1);
+    this.scene.add( sphere );
   }
 }
 
@@ -52,16 +73,16 @@ class Node {
   ) {}
   getPosition() {
     return {
-      x,
-      y,
+      x: this.x,
+      y: this.y,
     };
   }
 }
 
 const init = () => {
   const container = document.getElementById<HTMLDivElement>('display');
-  if (!container) throw new Error("fuck");
-  new Main(container, { size: 1, roadDensity: 3, entryRoadCount: 3, });
+  if (!container) throw new Error('Ahhh');
+  new Main(container, { size: 25, roadDensity: 3, entryRoadCount: 3, isWaterFront: true });
 };
 
 init();
