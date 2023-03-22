@@ -4,7 +4,7 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls';
 
 import { Node } from './classes/node';
 import { BoundingRadians } from './types/input';
-import { getBezierCurves } from './utils/node';
+import { getBezierCurves } from './utils/shapes/bezier-curve';
 
 document.querySelector<HTMLDivElement>('#app').innerHTML = `
   <div id="display"></div>

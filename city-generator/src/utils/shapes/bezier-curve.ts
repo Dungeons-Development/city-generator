@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import { Node } from '../classes/node';
-import { BoundingRadians } from '../types/input';
+import { Node } from '../../classes/node';
+import { BoundingRadians } from '../../types/input';
 
 const MAX_CURVE_LENGTH = 10;
 
@@ -34,33 +34,6 @@ export const getBezierCurves = (radius: number, bounds?: BoundingRadians) => {
   return bezierCurves;
 };
 
-const getRandomBounds = (): BoundingRadians => {
-  const startDegree = getRandomNumber(0, 270);
-  const endDegree = getRandomNumber(startDegree, 360);
-  console.log(`Random degrees; startDegree: ${startDegree}, endDegree: ${endDegree}`);
-
-  return {
-    start: degreeToRadians(startDegree),
-    end: degreeToRadians(endDegree),
-  };
-};
-
-const pythagoreanTheorem = (p1: Node, p2: Node) => {
-  const x1 = p1.getPosition().x;
-  const y1 = p1.getPosition().y;
-  const x2 = p2.getPosition().x;
-  const y2 = p2.getPosition().y;
-  return Math.sqrt((x2 - x1)**2 + (y2 - y1)**2);
-};
-
-const getSlope = (p1: Node, p2: Node) => {
-  const x1 = p1.getPosition().x;
-  const y1 = p1.getPosition().y;
-  const x2 = p2.getPosition().x;
-  const y2 = p2.getPosition().y;
-  return (y2 - y1)/(x2 - x1);
-};
-
 const getNextNode = (startNode: Node, endNode: Node, distanceBetween) => {
   const distanceRatio = MAX_CURVE_LENGTH/distanceBetween;
 
@@ -85,18 +58,13 @@ const getMidPoint = (startNode: Node, endNode: Node) => {
   return new Node(startNode.getPosition().x + displacementX, startNode.getPosition().y + displacementY);
 };
 
-const getRandomNumber = (min: number, max: number) => {
-  return Math.random() * (max - min) + min;
-};
+const getRandomBounds = (): BoundingRadians => {
+  const startDegree = getRandomNumber(0, 270);
+  const endDegree = getRandomNumber(startDegree, 360);
+  console.log(`Random degrees; startDegree: ${startDegree}, endDegree: ${endDegree}`);
 
-const degreeToRadians = (degree: number) => {
-  return degree * Math.PI / 180;
-};
-
-const radiansToX = (radians: number, radius: number) => {
-  return radius * Math.cos(radians);
-};
-
-const radiansToY = (radians: number, radius: number) => {
-  return radius * Math.sin(radians);
+  return {
+    start: degreeToRadians(startDegree),
+    end: degreeToRadians(endDegree),
+  };
 };
