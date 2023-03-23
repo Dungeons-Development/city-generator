@@ -1,6 +1,6 @@
 import { Node } from '../classes/node';
 
-const pythagoreanTheorem = (p1: Node, p2: Node) => {
+export const pythagoreanTheorem = (p1: Node, p2: Node) => {
   const x1 = p1.getPosition().x;
   const y1 = p1.getPosition().y;
   const x2 = p2.getPosition().x;
@@ -8,7 +8,7 @@ const pythagoreanTheorem = (p1: Node, p2: Node) => {
   return Math.sqrt((x2 - x1)**2 + (y2 - y1)**2);
 };
 
-const getSlope = (p1: Node, p2: Node) => {
+export const getSlope = (p1: Node, p2: Node) => {
   const x1 = p1.getPosition().x;
   const y1 = p1.getPosition().y;
   const x2 = p2.getPosition().x;
@@ -16,18 +16,24 @@ const getSlope = (p1: Node, p2: Node) => {
   return (y2 - y1)/(x2 - x1);
 };
 
-const getRandomNumber = (min: number, max: number) => {
+export const getRandomNumber = (min: number, max: number) => {
   return Math.random() * (max - min) + min;
 };
 
-const degreeToRadians = (degree: number) => {
+export const getRandomInt = (min: number, max: number) => {
+  min = Math.ceil(min);
+  max = Math.floor(max);
+  return Math.floor(Math.random() * (max - min) + min); // The maximum is exclusive and the minimum is inclusive
+}
+
+export const degreeToRadians = (degree: number) => {
   return degree * Math.PI / 180;
 };
 
-const radiansToX = (radians: number, radius: number) => {
+export const radiansToX = (radians: number, radius: number) => {
   return radius * Math.cos(radians);
 };
 
-const radiansToY = (radians: number, radius: number) => {
+export const radiansToY = (radians: number, radius: number) => {
   return radius * Math.sin(radians);
 };

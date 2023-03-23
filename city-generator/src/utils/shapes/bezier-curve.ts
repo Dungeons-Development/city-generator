@@ -1,20 +1,22 @@
 import * as THREE from 'three';
+import {QuadraticBezierCurve, Vector2} from 'three';
 import { Node } from '../../classes/node';
-import { BoundingRadians } from '../../types/input';
+import { getRandomNumber, radiansToX, radiansToY, getSlope, pythagoreanTheorem, getRandomInt } from '../math';
 
 const MAX_CURVE_LENGTH = 10;
 
-export const getBezierCurves = (radius: number, bounds?: BoundingRadians) => {
-  if (!bounds) {
-      bounds = getRandomBounds();
+export const getWaterFrontShape = (radius: number, waterPath?: THREE.Vector2[]) => {
+  if (!waterPath) {
+    const { startNode, endNode } = getRandomBounds(radius);
   }
-  let startNode = new Node(radiansToX(bounds.start, radius), radiansToY(bounds.start, radius));
-  const endNode = new Node(radiansToX(bounds.end, radius), radiansToY(bounds.end, radius));
-  const slope = getSlope(startNode, endNode);
 
+};
 
-  let distBetweenPoints = pythagoreanTheorem(startNode, endNode);
+const getCurvesToPoint = (startNode: Node, endNode: Node) => {
   const bezierCurves = [];
+  const slope = getSlope(startNode, endNode);
+  let distBetweenPoints = pythagoreanTheorem(startNode, endNode);
+
   while(distBetweenPoints > MAX_CURVE_LENGTH) {
     const nextNode = getNextNode(startNode, endNode, distBetweenPoints);
     const midPoint = getMidPoint(startNode, nextNode);
@@ -29,8 +31,6 @@ export const getBezierCurves = (radius: number, bounds?: BoundingRadians) => {
     startNode = nextNode;
     distBetweenPoints = pythagoreanTheorem(startNode, endNode);
   }
-
-  console.log(`Node locations; startNode: ${startNode.toString()}, endNode: ${endNode.toString()}`);
   return bezierCurves;
 };
 
@@ -58,13 +58,145 @@ const getMidPoint = (startNode: Node, endNode: Node) => {
   return new Node(startNode.getPosition().x + displacementX, startNode.getPosition().y + displacementY);
 };
 
-const getRandomBounds = (): BoundingRadians => {
-  const startDegree = getRandomNumber(0, 270);
-  const endDegree = getRandomNumber(startDegree, 360);
-  console.log(`Random degrees; startDegree: ${startDegree}, endDegree: ${endDegree}`);
-
+const getRandomBounds = (radius: number): { startNode: THREE.Vector2, endNode: THREE.Vector2 } => {
+  let startPoint = generateStartPoint(radius);
+  let endPoint = generateStartPoint(radius);
+  while(!verifyInitialPoints(startPoint, endPoint, radius)) {
+    startPoint = generateStartPoint(radius);
+    endPoint = generateStartPoint(radius);
+  }
   return {
-    start: degreeToRadians(startDegree),
-    end: degreeToRadians(endDegree),
+    startPoint,
+    endPoint,
   };
+};
+
+const vectorToString = (vector: THREE.Vector2): string => `{ x: ${vector.x}, y: ${vector.y} }`;
+
+const verifyInitialPoints = (startPoint: THREE.Vector2, endPoint: THREE.Vector2, radius: number) => {
+  console.log(`startPoint: ${vectorToString(startPoint)} endPoint: ${vectorToString(endPoint)}`);
+  const waterArea = getWaterFrontArea(startPoint, endPoint, radius);
+  console.log(`waterArea: ${waterArea}, totalArea: ${radius * radius}`);
+  const totalArea = radius * radius;
+  return !(waterArea < totalArea * .15 || waterArea > totalArea * .75)
+};
+
+const getWaterFrontArea = (startPoint: THREE.Vector2, endPoint: THREE.Vector2, radius: number) => {
+  const xDiff = endPoint.x - startPoint.x;
+  const yDiff = endPoint.y - startPoint.y;
+  // Points are on the same side TODO: Support points on same side
+  if (yDiff === 0 || xDiff === 0) {
+    return 0;
+  }
+  const points = [startPoint, endPoint];
+  // Points are on opposite sides
+  if (Math.abs(yDiff) === radius * 2 || Math.abs(xDiff) === radius * 2) {
+    // Points are on bottom and top of map
+    if (Math.abs(yDiff) === radius * 2) {
+      if (yDiff < 0) {
+        // Left-half
+        return getArea([
+          ...points,
+          new THREE.Vector2(-radius, -radius),
+          new THREE.Vector2(-radius, radius),
+          startPoint,
+        ]);
+      }
+      // Right-half
+      return getArea([
+        ...points,
+        new THREE.Vector2(radius, radius),
+        new THREE.Vector2(radius, -radius),
+        startPoint,
+      ]);
+    }
+    if (xDiff < 0) {
+      // Top-half
+      return getArea([
+        ...points,
+        new THREE.Vector2(-radius, radius),
+        new THREE.Vector2(radius, radius),
+        startPoint,
+      ]);
+    }
+    // Bottom-half
+    return getArea([
+      ...points,
+      new THREE.Vector2(radius, -radius),
+      new THREE.Vector2(-radius, -radius),
+      startPoint,
+    ]);
+  }
+
+  let cornerPoint;
+  if (endPoint.y === -radius) {
+    // Top-left Corner
+    points.push(new Vector2(-radius, -radius));
+    if (startPoint.x === radius) {
+      points.push(
+        new Vector2(-radius, radius),
+        new Vector2(radius, radius),
+      );
+    }
+  }
+  if (endPoint.x === -radius) {
+    points.push(new Vector2(-radius, radius));
+    if (startPoint.y === -radius) {
+      points.push(
+        new Vector2(radius, radius),
+        new Vector2(radius, -radius),
+      );
+    }
+  }
+  if (endPoint.y === radius) {
+    points.push(new Vector2(radius, radius));
+    if (startPoint.x === -radius) {
+      points.push(
+        new Vector2(radius, -radius),
+        new Vector2(-radius, -radius),
+      );
+    }
+  }
+  if (endPoint.x === radius) {
+    points.push(new Vector2(radius, -radius));
+    if (startPoint.y === radius) {
+      points.push(
+        new Vector2(-radius, -radius),
+        new Vector2(-radius, radius),
+      );
+    }
+  }
+
+  points.push(startPoint);
+  return getArea(points);
+};
+
+const generateStartPoint = (radius: number) => {
+  const randomSide = getRandomInt(0, 4);
+  let x, y;
+  switch(randomSide) {
+    case 0: // Right
+      x = radius;
+      y = getRandomNumber(-radius, radius);
+      break;
+    case 1: // Bottom
+      x = getRandomNumber(-radius, radius);
+      y = -radius;
+      break;
+    case 2: // Left
+      x = -radius;
+      y = getRandomNumber(-radius, radius);
+      break;
+    case 3: // Top
+      x = getRandomNumber(-radius, radius);
+      y = radius;
+      break;
+    default:
+      throw new Error('How da heck did you get that?!!');
+  }
+  return new THREE.Vector2(x, y);
+};
+
+const getArea = (points: THREE.Vector2[]) => {
+  return Math.abs(THREE.ShapeUtils.area(points));
 };
