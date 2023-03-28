@@ -1,5 +1,6 @@
 import './style.css'
 import * as THREE from 'three';
+import { Vector2 } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls';
 
 import { Node } from './classes/node';
@@ -35,7 +36,7 @@ class Main {
         walls: AssetMask[],
         environment: AssetMask[],
       },
-      userBounds?: {
+      userInput?: {
         water?: THREE.Vector2[],
       },
     },
@@ -79,7 +80,7 @@ class Main {
 
     this.addDrawingRect(container.offsetWidth, container.offsetHeight);
     this.addBorders(radius);
-    this.addWaterFront(parameters.userBounds?.water);
+    this.addWaterFront(parameters.userInput?.water);
     
     this.animate();
   }
@@ -123,8 +124,8 @@ class Main {
     this.scene.add(line);
   }
   
-  addWaterFront = (bounds?: BoundingRadians) => {
-    const mesh = getWaterFrontMesh(this.radius, bounds);
+  addWaterFront = (waterPath?: Vector2[]) => {
+    const mesh = getWaterFrontMesh(this.radius, waterPath);
     this.scene.add(mesh);
     this.animate();
   }
@@ -139,7 +140,12 @@ const init = () => {
     entryRoadCount: 3,
     isWaterFront: true,
     userInput: {
-      //water: [],
+      water: [
+        new Vector2(-25, -25),
+        new Vector2(25, 25),
+        new Vector2(25, -25),
+        new Vector2(-25, -25),
+      ]
     },
   });
 };

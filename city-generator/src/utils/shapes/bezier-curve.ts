@@ -2,8 +2,8 @@ import { CubicBezierCurve, Vector2, ShapeUtils, Shape, ShapeGeometry, MeshBasicM
 import { getRandomNumber, pythagoreanTheorem, getRandomInt } from '../math';
 
 const CURVE_LENGTH = 5;
-const MIN_WATER_PERCENT = .1;
-const MAX_WATER_PERCENT = .35;
+const MIN_WATER_PERCENT = 0;
+const MAX_WATER_PERCENT = 1;
 const DISPLACEMENT_AMOUNT = CURVE_LENGTH / 2;
 const POINT_DENSITY = 100;
 
