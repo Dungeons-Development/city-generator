@@ -1,10 +1,10 @@
 import { CubicBezierCurve, Vector2, ShapeUtils, Shape, ShapeGeometry, MeshBasicMaterial, Mesh } from 'three';
 import { getRandomNumber, pythagoreanTheorem, getRandomInt } from '../math';
 
-const CURVE_LENGTH = 10;
+const CURVE_LENGTH = 5;
 const MIN_WATER_PERCENT = .1;
 const MAX_WATER_PERCENT = .35;
-const DISPLACEMENT_PERCENT = .5;
+const DISPLACEMENT_AMOUNT = CURVE_LENGTH / 2;
 const POINT_DENSITY = 100;
 
 export const getWaterFrontMesh = (radius: number, waterPath?: Vector2[]) => {
@@ -33,10 +33,11 @@ const getPointsFromPath = (waterPath: Vector2[], radius: number) => {
     const currentPoint = waterPath[i];
     // Don't add a curve to points traveling along map border
     if (
-      (radius === currentPoint.x && radius === startPoint.x) ||
-      (radius === startPoint.y && radius === currentPoint.y)
+      (startPoint.x === currentPoint.x && radius === Math.abs(startPoint.x)) ||
+      (startPoint.y === currentPoint.y && radius === Math.abs(currentPoint.y))
     ) {
       points.push(currentPoint);
+      startPoint = currentPoint;
       continue;
     }
 
@@ -49,7 +50,7 @@ const getPointsFromPath = (waterPath: Vector2[], radius: number) => {
           startPoint,
           midPoint1,
           midPoint2,
-          currentPoint,
+          nextPoint,
       );
       points.push(...bezierCurve.getPoints(POINT_DENSITY));
 
@@ -69,9 +70,8 @@ const getNextPoint = (startPoint: Vector2, endPoint: Vector2, distanceBetween: n
   const newY = (1 - distanceRatio) * startPoint.y + distanceRatio * endPoint.y;
 
   // Randomly Offset the Position of the next point
-  const displacementAmount = CURVE_LENGTH * DISPLACEMENT_PERCENT;
-  const xDisplacement = getRandomNumber(-displacementAmount, displacementAmount);
-  const yDisplacement = getRandomNumber(-displacementAmount, displacementAmount)
+  const xDisplacement = getRandomNumber(-DISPLACEMENT_AMOUNT, DISPLACEMENT_AMOUNT);
+  const yDisplacement = getRandomNumber(-DISPLACEMENT_AMOUNT, DISPLACEMENT_AMOUNT)
 
   return new Vector2(newX + xDisplacement, newY + yDisplacement);
 };
@@ -116,7 +116,6 @@ const getWaterFrontPath = (startPoint: Vector2, endPoint: Vector2, radius: numbe
           ...points,
           new Vector2(-radius, -radius),
           new Vector2(-radius, radius),
-          startPoint,
         ];
       }
       // Right-half
@@ -124,7 +123,6 @@ const getWaterFrontPath = (startPoint: Vector2, endPoint: Vector2, radius: numbe
         ...points,
         new Vector2(radius, radius),
         new Vector2(radius, -radius),
-        startPoint,
       ];
     }
     if (xDiff < 0) {
@@ -133,7 +131,6 @@ const getWaterFrontPath = (startPoint: Vector2, endPoint: Vector2, radius: numbe
         ...points,
         new Vector2(-radius, radius),
         new Vector2(radius, radius),
-        startPoint,
       ];
     }
     // Bottom-half
@@ -141,7 +138,6 @@ const getWaterFrontPath = (startPoint: Vector2, endPoint: Vector2, radius: numbe
       ...points,
       new Vector2(radius, -radius),
       new Vector2(-radius, -radius),
-      startPoint,
     ];
   }
 
