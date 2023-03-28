@@ -1,92 +1,109 @@
-import * as THREE from 'three';
-import {QuadraticBezierCurve, Vector2} from 'three';
-import { Node } from '../../classes/node';
-import { getRandomNumber, radiansToX, radiansToY, getSlope, pythagoreanTheorem, getRandomInt } from '../math';
+import { CubicBezierCurve, Vector2, ShapeUtils, Shape, ShapeGeometry, MeshBasicMaterial, Mesh } from 'three';
+import { getRandomNumber, pythagoreanTheorem, getRandomInt } from '../math';
 
-const MAX_CURVE_LENGTH = 10;
+const CURVE_LENGTH = 10;
+const MIN_WATER_PERCENT = .1;
+const MAX_WATER_PERCENT = .35;
+const DISPLACEMENT_PERCENT = .5;
+const POINT_DENSITY = 100;
 
-export const getWaterFrontShape = (radius: number, waterPath?: THREE.Vector2[]) => {
+export const getWaterFrontMesh = (radius: number, waterPath?: Vector2[]) => {
+  if (waterPath && !validateWaterArea(waterPath, radius)) {
+    throw new Error('Path of water must be larger than what is given.');
+  }
   if (!waterPath) {
-    const { startNode, endNode } = getRandomBounds(radius);
+    waterPath = getWaterPath(radius);
   }
-
+  const points = getPointsFromPath(waterPath, radius); 
+  //const points = getPointsFromBezierCurves(bezierCurves);
+  return createWaterMeshFromPoints(points, 0x0033BA);
 };
 
-const getCurvesToPoint = (startNode: Node, endNode: Node) => {
-  const bezierCurves = [];
-  const slope = getSlope(startNode, endNode);
-  let distBetweenPoints = pythagoreanTheorem(startNode, endNode);
-
-  while(distBetweenPoints > MAX_CURVE_LENGTH) {
-    const nextNode = getNextNode(startNode, endNode, distBetweenPoints);
-    const midPoint = getMidPoint(startNode, nextNode);
-    bezierCurves.push(
-      new THREE.QuadraticBezierCurve(
-        new THREE.Vector2(startNode.getPosition().x, startNode.getPosition().y),
-        new THREE.Vector2(midPoint.getPosition().x, midPoint.getPosition().y),
-        new THREE.Vector2(nextNode.getPosition().x, nextNode.getPosition().y),
-      )
-    );
-
-    startNode = nextNode;
-    distBetweenPoints = pythagoreanTheorem(startNode, endNode);
-  }
-  return bezierCurves;
+const createWaterMeshFromPoints = (points: Vector2[], color: string | number ) => {
+    const waterShape = new Shape(points);
+    const geometry = new ShapeGeometry(waterShape);
+    const material = new MeshBasicMaterial({ color });
+    return new Mesh(geometry, material);
 };
 
-const getNextNode = (startNode: Node, endNode: Node, distanceBetween) => {
-  const distanceRatio = MAX_CURVE_LENGTH/distanceBetween;
+const getPointsFromPath = (waterPath: Vector2[], radius: number) => {
+  let startPoint = waterPath[0];
+  const points = [startPoint];
+  for(let i = 1; i < waterPath.length; i++) {
+    const currentPoint = waterPath[i];
+    // Don't add a curve to points traveling along map border
+    if (
+      (radius === currentPoint.x && radius === startPoint.x) ||
+      (radius === startPoint.y && radius === currentPoint.y)
+    ) {
+      points.push(currentPoint);
+      continue;
+    }
 
-  const newX = (1 - distanceRatio) * startNode.getPosition().x + distanceRatio * endNode.getPosition().x;
-  const newY = (1 - distanceRatio) * startNode.getPosition().y + distanceRatio * endNode.getPosition().y;
+    let distBetweenPoints = pythagoreanTheorem(startPoint, currentPoint);
+    while(distBetweenPoints > CURVE_LENGTH) {
+      const nextPoint = getNextPoint(startPoint, currentPoint, distBetweenPoints);
+      const midPoint1 = getMidPoint(startPoint, nextPoint);
+      const midPoint2 = getMidPoint(midPoint1, nextPoint);
+      const bezierCurve = new CubicBezierCurve(
+          startPoint,
+          midPoint1,
+          midPoint2,
+          currentPoint,
+      );
+      points.push(...bezierCurve.getPoints(POINT_DENSITY));
+
+      startPoint = nextPoint;
+      distBetweenPoints = pythagoreanTheorem(startPoint, currentPoint);
+    }
+    points.push(currentPoint);
+    startPoint = currentPoint;
+  }
+  return points;
+};
+
+const getNextPoint = (startPoint: Vector2, endPoint: Vector2, distanceBetween: number) => {
+  const distanceRatio = CURVE_LENGTH / distanceBetween;
+
+  const newX = (1 - distanceRatio) * startPoint.x + distanceRatio * endPoint.x;
+  const newY = (1 - distanceRatio) * startPoint.y + distanceRatio * endPoint.y;
 
   // Randomly Offset the Position of the next point
-  const displacementAmount = MAX_CURVE_LENGTH / 5;
+  const displacementAmount = CURVE_LENGTH * DISPLACEMENT_PERCENT;
   const xDisplacement = getRandomNumber(-displacementAmount, displacementAmount);
   const yDisplacement = getRandomNumber(-displacementAmount, displacementAmount)
 
-  return new Node(newX + xDisplacement, newY + yDisplacement);
+  return new Vector2(newX + xDisplacement, newY + yDisplacement);
 };
 
-const getMidPoint = (startNode: Node, endNode: Node) => {
-  const distX = endNode.getPosition().x - startNode.getPosition().x;
-  const distY = endNode.getPosition().y - startNode.getPosition().y;
+const getMidPoint = (startPoint: Vector2, endPoint: Vector2) => {
+  const xDiff = endPoint.x - startPoint.x;
+  const yDiff = endPoint.y - startPoint.y;
   
-  const displacementX = distX < 0 ? getRandomNumber(distX, 0) : getRandomNumber(0, distX);
-  const displacementY = distY < 0 ? getRandomNumber(distY, 0) : getRandomNumber(0, distY);
+  const displacementX = xDiff < 0 ? getRandomNumber(xDiff, 0) : getRandomNumber(0, xDiff);
+  const displacementY = yDiff < 0 ? getRandomNumber(yDiff, 0) : getRandomNumber(0, yDiff);
 
-  return new Node(startNode.getPosition().x + displacementX, startNode.getPosition().y + displacementY);
+  return new Vector2(startPoint.x + displacementX, startPoint.y + displacementY);
 };
 
-const getRandomBounds = (radius: number): { startNode: THREE.Vector2, endNode: THREE.Vector2 } => {
-  let startPoint = generateStartPoint(radius);
-  let endPoint = generateStartPoint(radius);
-  while(!verifyInitialPoints(startPoint, endPoint, radius)) {
-    startPoint = generateStartPoint(radius);
-    endPoint = generateStartPoint(radius);
+const getWaterPath = (radius: number) => {
+  let startPoint = generatePointInSquare(radius);
+  let endPoint = generatePointInSquare(radius);
+  let waterPath = getWaterFrontPath(startPoint, endPoint, radius);
+  while(!validateWaterArea(waterPath, radius)) {
+    startPoint = generatePointInSquare(radius);
+    endPoint = generatePointInSquare(radius);
+    waterPath = getWaterFrontPath(startPoint, endPoint, radius);
   }
-  return {
-    startPoint,
-    endPoint,
-  };
+  return waterPath;
 };
 
-const vectorToString = (vector: THREE.Vector2): string => `{ x: ${vector.x}, y: ${vector.y} }`;
-
-const verifyInitialPoints = (startPoint: THREE.Vector2, endPoint: THREE.Vector2, radius: number) => {
-  console.log(`startPoint: ${vectorToString(startPoint)} endPoint: ${vectorToString(endPoint)}`);
-  const waterArea = getWaterFrontArea(startPoint, endPoint, radius);
-  console.log(`waterArea: ${waterArea}, totalArea: ${radius * radius}`);
-  const totalArea = radius * radius;
-  return !(waterArea < totalArea * .15 || waterArea > totalArea * .75)
-};
-
-const getWaterFrontArea = (startPoint: THREE.Vector2, endPoint: THREE.Vector2, radius: number) => {
+const getWaterFrontPath = (startPoint: Vector2, endPoint: Vector2, radius: number) => {
   const xDiff = endPoint.x - startPoint.x;
   const yDiff = endPoint.y - startPoint.y;
   // Points are on the same side TODO: Support points on same side
   if (yDiff === 0 || xDiff === 0) {
-    return 0;
+    return [];
   }
   const points = [startPoint, endPoint];
   // Points are on opposite sides
@@ -95,40 +112,39 @@ const getWaterFrontArea = (startPoint: THREE.Vector2, endPoint: THREE.Vector2, r
     if (Math.abs(yDiff) === radius * 2) {
       if (yDiff < 0) {
         // Left-half
-        return getArea([
+        return [
           ...points,
-          new THREE.Vector2(-radius, -radius),
-          new THREE.Vector2(-radius, radius),
+          new Vector2(-radius, -radius),
+          new Vector2(-radius, radius),
           startPoint,
-        ]);
+        ];
       }
       // Right-half
-      return getArea([
+      return [
         ...points,
-        new THREE.Vector2(radius, radius),
-        new THREE.Vector2(radius, -radius),
+        new Vector2(radius, radius),
+        new Vector2(radius, -radius),
         startPoint,
-      ]);
+      ];
     }
     if (xDiff < 0) {
       // Top-half
-      return getArea([
+      return [
         ...points,
-        new THREE.Vector2(-radius, radius),
-        new THREE.Vector2(radius, radius),
+        new Vector2(-radius, radius),
+        new Vector2(radius, radius),
         startPoint,
-      ]);
+      ];
     }
     // Bottom-half
-    return getArea([
+    return [
       ...points,
-      new THREE.Vector2(radius, -radius),
-      new THREE.Vector2(-radius, -radius),
+      new Vector2(radius, -radius),
+      new Vector2(-radius, -radius),
       startPoint,
-    ]);
+    ];
   }
 
-  let cornerPoint;
   if (endPoint.y === -radius) {
     // Top-left Corner
     points.push(new Vector2(-radius, -radius));
@@ -166,12 +182,10 @@ const getWaterFrontArea = (startPoint: THREE.Vector2, endPoint: THREE.Vector2, r
       );
     }
   }
-
-  points.push(startPoint);
-  return getArea(points);
+  return points;
 };
 
-const generateStartPoint = (radius: number) => {
+const generatePointInSquare = (radius: number) => {
   const randomSide = getRandomInt(0, 4);
   let x, y;
   switch(randomSide) {
@@ -194,9 +208,11 @@ const generateStartPoint = (radius: number) => {
     default:
       throw new Error('How da heck did you get that?!!');
   }
-  return new THREE.Vector2(x, y);
+  return new Vector2(x, y);
 };
 
-const getArea = (points: THREE.Vector2[]) => {
-  return Math.abs(THREE.ShapeUtils.area(points));
+const validateWaterArea = (waterPath: Vector2[], radius: number) => {
+  const waterArea = Math.abs(ShapeUtils.area(waterPath));
+  const totalArea = radius * radius * 4;
+  return !(waterArea < totalArea * MIN_WATER_PERCENT || waterArea > totalArea * MAX_WATER_PERCENT)
 };

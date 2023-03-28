@@ -3,7 +3,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls';
 
 import { Node } from './classes/node';
-import { getWaterFrontShape } from './utils/shapes/bezier-curve';
+import { getWaterFrontMesh } from './utils/shapes/bezier-curve';
 
 document.querySelector<HTMLDivElement>('#app').innerHTML = `
   <div id="display"></div>
@@ -78,6 +78,7 @@ class Main {
     resizeObserver.observe(container);
 
     this.addDrawingRect(container.offsetWidth, container.offsetHeight);
+    this.addBorders(radius);
     this.addWaterFront(parameters.userBounds?.water);
     
     this.animate();
@@ -102,21 +103,30 @@ class Main {
     const geometry = new THREE.BoxGeometry(width, height, 1);
     const material = new THREE.MeshBasicMaterial({ color: 0xffffcd });
     const cube = new THREE.Mesh(geometry, material);
-    cube.position.set(0, 0, -1);
+    // TODO: CHANGE BACK TO -1 WHEN THIS IS DONE
+    cube.position.set(0, 0, -2);
     this.scene.add(cube);
   }
   
-  addWaterFront = (bounds?: BoundingRadians) => {
-    const bezierCurves = getWaterFrontShape(this.radius, bounds);
-    //const linePoints = bezierCurves.map(curve => curve.getPoints(100)).reduce((acc, points) => acc.push(...points) && acc, []);
-    //const waterFront = new THREE.Shape();
-    //waterFront.setFromPoints(linePoints);
+  addBorders = (radius: number) => {
+    const material = new THREE.LineBasicMaterial({ color: 0x000000 });
+    const points = [
+      new THREE.Vector3(radius, radius, 0),
+      new THREE.Vector3(-radius, radius, 0),
+      new THREE.Vector3(-radius, -radius, 0),
+      new THREE.Vector3(radius, -radius, 0),
+      new THREE.Vector3(radius, radius, 0),
+    ];
 
-    //const geometry = new THREE.ShapeGeometry(waterFront);
-    //const material = new THREE.MeshBasicMaterial({ color: 0x0033BA });
-    //const mesh = new THREE.Mesh(geometry, material) ;
-    //this.scene.add(mesh);
-    //this.animate();
+    const geometry = new THREE.BufferGeometry().setFromPoints( points );
+    const line = new THREE.Line( geometry, material );
+    this.scene.add(line);
+  }
+  
+  addWaterFront = (bounds?: BoundingRadians) => {
+    const mesh = getWaterFrontMesh(this.radius, bounds);
+    this.scene.add(mesh);
+    this.animate();
   }
 }
 

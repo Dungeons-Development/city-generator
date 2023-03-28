@@ -1,18 +1,18 @@
-import { Node } from '../classes/node';
+import { Vector2 } from 'three';
 
-export const pythagoreanTheorem = (p1: Node, p2: Node) => {
-  const x1 = p1.getPosition().x;
-  const y1 = p1.getPosition().y;
-  const x2 = p2.getPosition().x;
-  const y2 = p2.getPosition().y;
+export const pythagoreanTheorem = (p1: Vector2, p2: Vector2) => {
+  const x1 = p1.x;
+  const y1 = p1.y;
+  const x2 = p2.x;
+  const y2 = p2.y;
   return Math.sqrt((x2 - x1)**2 + (y2 - y1)**2);
 };
 
-export const getSlope = (p1: Node, p2: Node) => {
-  const x1 = p1.getPosition().x;
-  const y1 = p1.getPosition().y;
-  const x2 = p2.getPosition().x;
-  const y2 = p2.getPosition().y;
+export const getSlope = (p1: Vector2, p2: Vector2) => {
+  const x1 = p1.x;
+  const y1 = p1.y;
+  const x2 = p2.x;
+  const y2 = p2.y;
   return (y2 - y1)/(x2 - x1);
 };
 
