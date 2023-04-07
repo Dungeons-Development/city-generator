@@ -2,21 +2,23 @@ import { CubicBezierCurve, Vector2, ShapeUtils, Shape, ShapeGeometry, MeshBasicM
 import { getRandomNumber, pythagoreanTheorem, getRandomInt } from '../math';
 
 const CURVE_LENGTH = 5;
-const MIN_WATER_PERCENT = 0;
-const MAX_WATER_PERCENT = 1;
-const DISPLACEMENT_AMOUNT = CURVE_LENGTH / 2;
-const POINT_DENSITY = 100;
+const POINT_RESOLUTION = 100;
+const RADIUS_LIMIT_DIVISOR = 5;
 
 export const getWaterFrontMesh = (radius: number, waterPath?: Vector2[]) => {
-  if (waterPath && !validateWaterArea(waterPath, radius)) {
-    throw new Error('Path of water must be larger than what is given.');
-  }
   if (!waterPath) {
-    waterPath = getWaterPath(radius);
+    const startPoint = generatePointInSquare(radius);
+    waterPath = generateWaterBodyPath(startPoint, radius);
   }
-  const points = getPointsFromPath(waterPath, radius); 
-  //const points = getPointsFromBezierCurves(bezierCurves);
-  return createWaterMeshFromPoints(points, 0x0033BA);
+  return createWaterMeshFromPoints(waterPath, 0x0033BA);
+};
+
+const generateWaterBodyPath = (startPoint: Vector2, radius: number) => {
+    const waterPath = generateWaterfrontPath(startPoint, radius);
+    const endPoint = waterPath.at(-1);
+    if (!endPoint) throw new Error('idk what happened');
+    waterPath.push(...getRemaingWaterPath(startPoint, endPoint, radius));
+    return waterPath;
 };
 
 const createWaterMeshFromPoints = (points: Vector2[], color: string | number ) => {
@@ -26,57 +28,50 @@ const createWaterMeshFromPoints = (points: Vector2[], color: string | number ) =
     return new Mesh(geometry, material);
 };
 
-const getPointsFromPath = (waterPath: Vector2[], radius: number) => {
-  let startPoint = waterPath[0];
-  const points = [startPoint];
-  for(let i = 1; i < waterPath.length; i++) {
-    const currentPoint = waterPath[i];
-    // Don't add a curve to points traveling along map border
-    if (
-      (startPoint.x === currentPoint.x && radius === Math.abs(startPoint.x)) ||
-      (startPoint.y === currentPoint.y && radius === Math.abs(currentPoint.y))
-    ) {
-      points.push(currentPoint);
-      startPoint = currentPoint;
-      continue;
-    }
-
-    let distBetweenPoints = pythagoreanTheorem(startPoint, currentPoint);
-    while(distBetweenPoints > CURVE_LENGTH) {
-      const nextPoint = getNextPoint(startPoint, currentPoint, distBetweenPoints);
-      const midPoint1 = getMidPoint(startPoint, nextPoint);
-      const midPoint2 = getMidPoint(midPoint1, nextPoint);
-      const bezierCurve = new CubicBezierCurve(
-          startPoint,
-          midPoint1,
-          midPoint2,
-          nextPoint,
-      );
-      points.push(...bezierCurve.getPoints(POINT_DENSITY));
-
-      startPoint = nextPoint;
-      distBetweenPoints = pythagoreanTheorem(startPoint, currentPoint);
-    }
-    points.push(currentPoint);
-    startPoint = currentPoint;
+/**
+ * @startPoint starting location of the water pathway
+ * @radius half the width of the square
+ */
+const generateWaterfrontPath = (startPoint: Vector2, radius: number) => {
+  const waterPath = [];
+  let nextPoint = generateNextRandomPoint(startPoint, radius);
+  while (isPointWithinSquare(nextPoint, radius)) {
+    waterPath.push(...getBezierPoints(startPoint, nextPoint));
+    startPoint = nextPoint;
+    nextPoint = generateNextRandomPoint(nextPoint, radius);
   }
-  return points;
+
+  nextPoint = boundPointToRadius(nextPoint, radius);
+  waterPath.push(...getBezierPoints(startPoint, nextPoint));
+  return waterPath;
 };
 
-const getNextPoint = (startPoint: Vector2, endPoint: Vector2, distanceBetween: number) => {
-  const distanceRatio = CURVE_LENGTH / distanceBetween;
+const getBezierPoints = (startPoint: Vector2, endPoint: Vector2) => {
+    return generateCubicBezierCurve(startPoint, endPoint)
+      .getPoints(POINT_RESOLUTION);
+}
 
-  const newX = (1 - distanceRatio) * startPoint.x + distanceRatio * endPoint.x;
-  const newY = (1 - distanceRatio) * startPoint.y + distanceRatio * endPoint.y;
-
-  // Randomly Offset the Position of the next point
-  const xDisplacement = getRandomNumber(-DISPLACEMENT_AMOUNT, DISPLACEMENT_AMOUNT);
-  const yDisplacement = getRandomNumber(-DISPLACEMENT_AMOUNT, DISPLACEMENT_AMOUNT)
-
-  return new Vector2(newX + xDisplacement, newY + yDisplacement);
+const boundPointToRadius = (point: Vector2, radius: number) => {
+  return new Vector2(
+    boundNumByRadius(point.x, radius),
+    boundNumByRadius(point.y, radius),
+  );
 };
 
-const getMidPoint = (startPoint: Vector2, endPoint: Vector2) => {
+const boundNumByRadius = (num: number, bound: number) => num > 0 ? Math.min(num, -bound) : Math.max(num, bound);
+
+const generateCubicBezierCurve = (startPoint: Vector2, endPoint: Vector2) => {
+    const midPoint1 = getRandomPointBetween(startPoint, endPoint);
+    const midPoint2 = getRandomPointBetween(midPoint1, endPoint);
+    return new CubicBezierCurve(
+      startPoint,
+      midPoint1,
+      midPoint2,
+      endPoint,
+    );
+};
+
+const getRandomPointBetween = (startPoint: Vector2, endPoint: Vector2) => {
   const xDiff = endPoint.x - startPoint.x;
   const yDiff = endPoint.y - startPoint.y;
   
@@ -86,19 +81,32 @@ const getMidPoint = (startPoint: Vector2, endPoint: Vector2) => {
   return new Vector2(startPoint.x + displacementX, startPoint.y + displacementY);
 };
 
-const getWaterPath = (radius: number) => {
-  let startPoint = generatePointInSquare(radius);
-  let endPoint = generatePointInSquare(radius);
-  let waterPath = getWaterFrontPath(startPoint, endPoint, radius);
-  while(!validateWaterArea(waterPath, radius)) {
-    startPoint = generatePointInSquare(radius);
-    endPoint = generatePointInSquare(radius);
-    waterPath = getWaterFrontPath(startPoint, endPoint, radius);
-  }
-  return waterPath;
+  
+const isPointWithinSquare = (point: Vector2, radius: number) => Math.abs(point.x) <= radius && Math.abs(point.y) <= radius
+
+const generateNextRandomPoint = (currentPoint: Vector2, radius: number, previousPoint: Vector2, totalLength: number) => {
+  const degreeToPreviousPoint = getDegreeFromPoint(currentPoint, previousPoint);
+  const weightMap = generateWeightMap(
+
+  const randDistX = getDisplacement(point.x, radius);
+  const randDistY = getDisplacement(point.y, radius);
+
+  return new Vector2(point.x + randDistX, point.y + randDistY);
 };
 
-const getWaterFrontPath = (startPoint: Vector2, endPoint: Vector2, radius: number) => {
+const getDegreeFromPoint = (center: Vector2, point: Vector2) => {
+  const angle = Math.atan(point.y - center.y/point.x - center.x);
+  return angle * (180 / Math.PI);
+};
+
+const getDisplacement = (start: number, radius: number) => {
+  const percentToBorder = Math.abs(start) / radius;
+  // Grows larger the closer to the starting point is to the border
+
+  const displacement = getRandomNumber(0, CURVE_LENGTH);
+};
+
+const getRemaingWaterPath = (startPoint: Vector2, endPoint: Vector2, radius: number) => {
   const xDiff = endPoint.x - startPoint.x;
   const yDiff = endPoint.y - startPoint.y;
   // Points are on the same side TODO: Support points on same side
@@ -113,14 +121,12 @@ const getWaterFrontPath = (startPoint: Vector2, endPoint: Vector2, radius: numbe
       if (yDiff < 0) {
         // Left-half
         return [
-          ...points,
           new Vector2(-radius, -radius),
           new Vector2(-radius, radius),
         ];
       }
       // Right-half
       return [
-        ...points,
         new Vector2(radius, radius),
         new Vector2(radius, -radius),
       ];
@@ -128,14 +134,12 @@ const getWaterFrontPath = (startPoint: Vector2, endPoint: Vector2, radius: numbe
     if (xDiff < 0) {
       // Top-half
       return [
-        ...points,
         new Vector2(-radius, radius),
         new Vector2(radius, radius),
       ];
     }
     // Bottom-half
     return [
-      ...points,
       new Vector2(radius, -radius),
       new Vector2(-radius, -radius),
     ];
@@ -181,34 +185,25 @@ const getWaterFrontPath = (startPoint: Vector2, endPoint: Vector2, radius: numbe
   return points;
 };
 
+/**
+ * Generates a random point on the border of a square within the radius limit divisor
+ * @param radius half of the width of the square
+ */
 const generatePointInSquare = (radius: number) => {
-  const randomSide = getRandomInt(0, 4);
-  let x, y;
-  switch(randomSide) {
-    case 0: // Right
-      x = radius;
-      y = getRandomNumber(-radius, radius);
-      break;
-    case 1: // Bottom
-      x = getRandomNumber(-radius, radius);
-      y = -radius;
-      break;
-    case 2: // Left
-      x = -radius;
-      y = getRandomNumber(-radius, radius);
-      break;
-    case 3: // Top
-      x = getRandomNumber(-radius, radius);
-      y = radius;
-      break;
-    default:
-      throw new Error('How da heck did you get that?!!');
-  }
-  return new Vector2(x, y);
-};
+  const randomSide = getRandomInt(0, 3);
+  // Bound the point to a location near one of the two corners
+  const rangeFromRadius = radius / RADIUS_LIMIT_DIVISOR;
+  let startingLoc = getRandomNumber(radius - rangeFromRadius, radius);
 
-const validateWaterArea = (waterPath: Vector2[], radius: number) => {
-  const waterArea = Math.abs(ShapeUtils.area(waterPath));
-  const totalArea = radius * radius * 4;
-  return !(waterArea < totalArea * MIN_WATER_PERCENT || waterArea > totalArea * MAX_WATER_PERCENT)
+  // Select one of the two random corners
+  if (randomSide % 2) {
+    startingLoc *= -1;
+  }
+  const sidesMap = [
+    new Vector2(radius, startingLoc), // Left
+    new Vector2(-radius, startingLoc), // Right
+    new Vector2(startingLoc, radius),  // Bottom
+    new Vector2(startingLoc, -radius), // Top
+  ];
+  return sidesMap[randomSide];
 };

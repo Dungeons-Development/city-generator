@@ -126,8 +126,8 @@ class Main {
   
   addWaterFront = (waterPath?: Vector2[]) => {
     const mesh = getWaterFrontMesh(this.radius, waterPath);
-    this.scene.add(mesh);
-    this.animate();
+    //this.scene.add(mesh);
+    //this.animate();
   }
 }
 
@@ -140,12 +140,12 @@ const init = () => {
     entryRoadCount: 3,
     isWaterFront: true,
     userInput: {
-      water: [
-        new Vector2(-25, -25),
-        new Vector2(25, 25),
-        new Vector2(25, -25),
-        new Vector2(-25, -25),
-      ]
+      //water: [
+        //new Vector2(-25, -25),
+        //new Vector2(25, 25),
+        //new Vector2(25, -25),
+        //new Vector2(-25, -25),
+      //]
     },
   });
 };

@@ -20,11 +20,28 @@ export const getRandomNumber = (min: number, max: number) => {
   return Math.random() * (max - min) + min;
 };
 
+
+interface WeightMap {
+  [key:number]: number;
+}
+export const getWeightedNumber = (weightMap: WeightMap, degreeOfAccuracy: number) => {
+  const keys: number[] = [];
+  for (const key in weightMap) {
+    for (let i = 0; i < weightMap[key] * degreeOfAccuracy; i++) {
+      keys.push(parseInt(key));
+    }
+  }
+  return keys[Math.floor(Math.random() * keys.length)];
+};
+
+/**
+ * Inclusively generates a random integer
+*/
 export const getRandomInt = (min: number, max: number) => {
   min = Math.ceil(min);
   max = Math.floor(max);
-  return Math.floor(Math.random() * (max - min) + min); // The maximum is exclusive and the minimum is inclusive
-}
+  return Math.floor(Math.random() * (max - min + 1) + min);
+};
 
 export const degreeToRadians = (degree: number) => {
   return degree * Math.PI / 180;
