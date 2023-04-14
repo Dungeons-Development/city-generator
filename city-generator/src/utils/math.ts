@@ -20,14 +20,13 @@ export const getRandomNumber = (min: number, max: number) => {
   return Math.random() * (max - min) + min;
 };
 
-
-interface WeightMap {
+export interface WeightMap {
   [key:number]: number;
 }
-export const getWeightedNumber = (weightMap: WeightMap, degreeOfAccuracy: number) => {
+export const getWeightedNumber = (weightMap: WeightMap) => {
   const keys: number[] = [];
   for (const key in weightMap) {
-    for (let i = 0; i < weightMap[key] * degreeOfAccuracy; i++) {
+    for (let i = 0; i < weightMap[key]; i++) {
       keys.push(parseInt(key));
     }
   }
@@ -53,4 +52,8 @@ export const radiansToX = (radians: number, radius: number) => {
 
 export const radiansToY = (radians: number, radius: number) => {
   return radius * Math.sin(radians);
+};
+
+export const radiansToDegrees = (radians: number) => {
+  return radians * (180 / Math.PI);
 };
