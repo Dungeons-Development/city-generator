@@ -1,42 +1,56 @@
-import { CubicBezierCurve, Vector2, Shape, ShapeGeometry, MeshBasicMaterial, Mesh } from 'three';
+import { Vector2, Curve, Shape, ShapeGeometry, MeshBasicMaterial, Mesh, CurvePath, LineCurve } from 'three';
 import { getRandomNumber, pythagoreanTheorem, getRandomInt, getWeightedNumber, WeightMap, radiansToDegrees } from '../math';
 
-const CURVE_LENGTH = 5;
-const POINT_RESOLUTION = 100;
 const RADIUS_LIMIT_DIVISOR = 5;
+const LINE_RESOLUTION = 1000;
 const TOTAL_DEGREES = 360;
 const DEGREE_RESOLUTION = 4;
 const DEGREE_BUFFER = 5;
+const MIN_WATERFRONT_LENGTH_RATIO = 1.5;
 const WEIGHT_MAP = {
   PREVIOUS_POINT: 1,
+  OUTSIDE_CLAMP: 0,
   CENTER: 3,
   CENTER_AFTER_BAN: 0,
   BORDER: 1,
-  BORDER_AFTER_SEEK: 5,
+  BORDER_AFTER_SEEK: 6,
   DEFAULT: 3,
 };
 const LINE_DISTANCE_MIN = 2;
 const LINE_DISTANCE_MAX = 5;
+const ALLOWED_LINE_DEGREE_CHANGE = 60;
 const BAN_CENTER_MOVEMENT_AT_RATIO = 0.8;
 const SEEK_BORDER_AT_RATIO = 1.25;
 
-export const getWaterFrontMesh = (radius: number, waterPath?: Vector2[]) => {
-  if (!waterPath) {
-    const startPoint = generatePointInSquare(radius);
-    waterPath = generateWaterBodyPath(startPoint, radius);
-  }
-  return createWaterMeshFromPoints(waterPath, 0x0033BA);
+/**
+ * Generates a mesh from a given waterline
+ * @param waterline the curved path of the waterline
+ * @param radius half of the width of the square
+ */
+export const generateWaterfrontMesh = (waterline: CurvePath<Vector2>, radius: number) => {
+  const waterBody = generateWaterBodyPath(waterline, radius);
+  return createWaterMeshFromWaterLine(waterBody, 0x0033BA, radius);
 };
 
-const generateWaterBodyPath = (startPoint: Vector2, radius: number) => {
-    const waterPath = generateWaterfrontPath(startPoint, radius);
-    const endPoint = waterPath.at(-1);
-    if (!endPoint) throw new Error('idk what happened');
-    waterPath.push(...getRemaingWaterPath(startPoint, endPoint, radius));
-    return waterPath;
+/**
+ * Generates the rest of the water body along the borders of the square
+ * @param waterline the curved path of the waterline
+ * @param radius half of the width of the square
+ */
+const generateWaterBodyPath = (waterline: CurvePath<Vector2>, radius: number) => {
+  const lineCurves = getRemaingWaterPathLines(waterline, radius);
+  lineCurves.forEach((curve) => waterline.add(curve));
+  return waterline;
 };
 
-const createWaterMeshFromPoints = (points: Vector2[], color: string | number ) => {
+/**
+ * Creates a mesh from the points outlining a given shape
+ * @param waterline the curved path of the waterline
+ * @param color the color of the created mesh
+ * @param radius half of the width of the square
+ */
+const createWaterMeshFromWaterLine = (waterline: CurvePath<Vector2>, color: string | number, radius: number) => {
+    const points = waterline.getSpacedPoints(LINE_RESOLUTION * radius);
     const waterShape = new Shape(points);
     const geometry = new ShapeGeometry(waterShape);
     const material = new MeshBasicMaterial({ color });
@@ -44,101 +58,183 @@ const createWaterMeshFromPoints = (points: Vector2[], color: string | number ) =
 };
 
 /**
- * @startPoint starting location of the water pathway
- * @radius half the width of the square
+ * Generates the waterline of the map
+ * @param radius half of the width of the square
+ * @param The CurvePath representation of the map's waterline
+ */
+export const generateWaterLine = (radius: number) => {
+    const startPoint = generatePointOnBorderOfSquare(radius);
+    return generateWaterfrontPath(startPoint, radius);
+};
+
+/**
+ * Returns a randomly generated waterfront path within the radius of a square
+ * @param startPoint the inital starting location from where the waterline will form
+ * @param radius half of the width of the square
  */
 const generateWaterfrontPath = (startPoint: Vector2, radius: number) => {
-  const waterPath = [];
-  let nextPoint = generateNextRandomPoint(startPoint, radius, new Vector2(0, 0), 0);
-  const rawPoints = [startPoint, nextPoint]; // TODO: KILL IT
+  const waterline = new CurvePath<Vector2>();
   let lengthOfLine = 0;
-  while (lengthOfLine < radius * 2) {
-    waterPath.push(...getBezierPoints(startPoint, nextPoint));
-    const previousPoint = startPoint;
-    startPoint = nextPoint;
-    lengthOfLine += pythagoreanTheorem(previousPoint, nextPoint);
-    nextPoint = generateNextRandomPoint(nextPoint, radius, previousPoint, lengthOfLine);
-    rawPoints.push(nextPoint);
+  let nextLine = generateNextLineInPath(startPoint, waterline, radius, lengthOfLine);
+  while (!isLineOutsideSquare(nextLine, radius)) {
+    waterline.add(nextLine);
+    lengthOfLine += pythagoreanTheorem(nextLine.v1, nextLine.v2);
+
+    nextLine = generateNextLineInPath(nextLine.v2, waterline, radius, lengthOfLine);
   }
-  nextPoint = boundPointToRadius(nextPoint, radius);
-  waterPath.push(...getBezierPoints(startPoint, nextPoint));
-  return waterPath;
+  nextLine = boundLineToRadius(nextLine, radius);
+  waterline.add(nextLine);
+  return waterline;
 };
 
-const getBezierPoints = (startPoint: Vector2, endPoint: Vector2) => {
-    return generateCubicBezierCurve(startPoint, endPoint)
-      .getPoints(POINT_RESOLUTION);
+/**
+ * Returns the given line bounded to the provided radius
+ * @param line the line in which to bound to the provided radius
+ * @param radius half of the width of the square
+ */
+const boundLineToRadius = (line: LineCurve, radius: number) => {
+  const { v1, v2 } = line;
+  const boundedEndpoint = new Vector2(
+    boundNumByRadius(v2.x, radius),
+    boundNumByRadius(v2.y, radius),
+  );
+  return new LineCurve(v1, boundedEndpoint);
+};
+
+/**
+ * Limits a given number with the bounds of a provided radius
+ * @param num the number to limit by the radius
+ * @param radius half of the width of the square
+ */
+const boundNumByRadius = (num: number, radius: number) => num > 0 ? Math.min(num, radius) : Math.max(num, -radius);
+  
+/**
+ * Checks wether the line leaves the radius of the square
+ * @param line the line segment to check
+ * @param radius half of the width of the square
+ */
+const isLineOutsideSquare = (line: LineCurve, radius: number) => {
+  const endPoint = line.v2;
+  return Math.abs(endPoint.x) > radius || Math.abs(endPoint.y) > radius
 }
 
-const boundPointToRadius = (point: Vector2, radius: number) => {
-  return new Vector2(
-    boundNumByRadius(point.x, radius),
-    boundNumByRadius(point.y, radius),
-  );
-};
-
-const boundNumByRadius = (num: number, bound: number) => num > 0 ? Math.min(num, -bound) : Math.max(num, bound);
-
-const generateCubicBezierCurve = (startPoint: Vector2, endPoint: Vector2) => {
-    const midPoint1 = getRandomPointBetween(startPoint, endPoint);
-    const midPoint2 = getRandomPointBetween(midPoint1, endPoint);
-    return new CubicBezierCurve(
-      startPoint,
-      midPoint1,
-      midPoint2,
-      endPoint,
-    );
-};
-
-const getRandomPointBetween = (startPoint: Vector2, endPoint: Vector2) => {
-  const xDiff = endPoint.x - startPoint.x;
-  const yDiff = endPoint.y - startPoint.y;
-  
-  const displacementX = xDiff < 0 ? getRandomNumber(xDiff, 0) : getRandomNumber(0, xDiff);
-  const displacementY = yDiff < 0 ? getRandomNumber(yDiff, 0) : getRandomNumber(0, yDiff);
-
-  return new Vector2(startPoint.x + displacementX, startPoint.y + displacementY);
-};
-
-  
-const isPointWithinSquare = (point: Vector2, radius: number) => Math.abs(point.x) <= radius && Math.abs(point.y) <= radius
-const generateNextRandomPoint = (currentPoint: Vector2, radius: number, previousPoint: Vector2, totalLength: number) => {
-  const degreeToPreviousPoint = getDegreeFromPoint(currentPoint, previousPoint);
-  const degreeToCenter = getDegreeFromPoint(currentPoint, new Vector2(0, 0));
+/**
+ * Generates the next line along the path using weighted randomness
+ * @param startPoint the point from which the next line will start at
+ * @param curvedPath the current curvedPath
+ * @param radius half of the width of the square
+ * @param lineLength the length of the current waterline
+ */
+const generateNextLineInPath = (startPoint: Vector2, curvedPath: CurvePath<Vector2>, radius: number, lineLength: number) => {
+  const previousCurve = curvedPath.curves.at(-1);
+  let degreeToPreviousPoint, degreeOfContinuedSlope;
+  if (previousCurve) {
+    degreeToPreviousPoint = getDegreeFromPoint(startPoint, previousCurve.getPoint(1));
+    degreeOfContinuedSlope = (180 + degreeToPreviousPoint) % 360;
+  }
+  const degreeToCenter = getDegreeFromPoint(startPoint, new Vector2(0, 0));
   const degreeToClosestBorder = getDegreeFromPoint(
-    currentPoint,
-    getClosestBorder(currentPoint, radius)
+    startPoint,
+    getClosestBorder(startPoint, radius)
   );
   const weightMap = {} as WeightMap;
   for(let scaledDegree = 0; scaledDegree < TOTAL_DEGREES / DEGREE_RESOLUTION; scaledDegree++) {
     const degree = scaledDegree * DEGREE_RESOLUTION;
-    if (isDegreeWithinBuffer(degree, degreeToPreviousPoint)) {
+    if (degreeOfContinuedSlope && Math.abs(degreeOfContinuedSlope - degree) > ALLOWED_LINE_DEGREE_CHANGE) {
+      weightMap[degree] = 0;
+    } else if (degreeToPreviousPoint && isDegreeWithinBuffer(degree, degreeToPreviousPoint)) {
       const isPointingAtPrevious = degree === degreeToPreviousPoint;
       weightMap[degree] = isPointingAtPrevious ? 0 : WEIGHT_MAP.PREVIOUS_POINT;
     } else if (isDegreeWithinBuffer(degree, degreeToCenter)) {
-      const distanceToCenter = pythagoreanTheorem(currentPoint, new Vector2(0, 0));
+      const distanceToCenter = pythagoreanTheorem(startPoint, new Vector2(0, 0));
       const percentToCenter = distanceToCenter / radius;
       const isBan = percentToCenter > BAN_CENTER_MOVEMENT_AT_RATIO;
       weightMap[degree] = isBan ? WEIGHT_MAP.CENTER_AFTER_BAN : WEIGHT_MAP.CENTER;
     } else if (isDegreeWithinBuffer(degree, degreeToClosestBorder)) {
-      const lengthRadiusRatio = totalLength / radius;
+      const lengthRadiusRatio = lineLength / radius;
       const seekBorder = lengthRadiusRatio > SEEK_BORDER_AT_RATIO;
       weightMap[degree] = seekBorder ? WEIGHT_MAP.BORDER_AFTER_SEEK : WEIGHT_MAP.BORDER;
     } else {
       weightMap[degree] = WEIGHT_MAP.DEFAULT;
     }
   }
-  const randomDistance = getRandomNumber(LINE_DISTANCE_MIN, LINE_DISTANCE_MAX);
-  return _generateNextRandomPoint(currentPoint, radius, randomDistance, weightMap);
+  return _generateNextLineInPath(startPoint, radius, weightMap, lineLength, curvedPath);
 };
 
-const _generateNextRandomPoint = (point: Vector2, radius: number, randomDistance: number, weightMap: WeightMap): Vector2 => {
+/**
+ * A recursive function for generating the next valid point along the line
+ * @param startPoint the point the line will originate from
+ * @param radius half of the width of the square
+ * @param wieghtMap a weighted map of the degrees of the next possible point and their likelyhood
+ * @param lineLength the length of the curvedpath
+ * @param curvedPath the current path of the line
+ */
+const _generateNextLineInPath = (
+  startPoint: Vector2,
+  radius: number,
+  weightMap: WeightMap,
+  lineLength: number,
+  curvedPath: CurvePath<Vector2>,
+): LineCurve => {
   const degreeOfNextPoint = getWeightedNumber(weightMap);
-  const nextPoint = getPointFromDegree(point, randomDistance, degreeOfNextPoint);
-  if (Math.abs(nextPoint.x) < radius && Math.abs(nextPoint.y) < radius) {
-    return nextPoint;
+  const randomDistance = getRandomNumber(LINE_DISTANCE_MIN, LINE_DISTANCE_MAX);
+  const endPoint = getPointFromDegree(startPoint, randomDistance, degreeOfNextPoint);
+  const nextLine = new LineCurve(startPoint, endPoint);
+  // New line will always start along the previous curve
+  const curvesToCheck = curvedPath.curves.slice(0, -1);
+
+  const collideWithWaterline = doesLineCollideWithCurves(nextLine, curvesToCheck);
+  const isLineLongEnough = (lineLength + randomDistance) / radius > MIN_WATERFRONT_LENGTH_RATIO;
+  if ((!isLineOutsideSquare(nextLine, radius) || isLineLongEnough) && !collideWithWaterline) {
+    return nextLine;
   }
-  return _generateNextRandomPoint(point, radius, randomDistance, weightMap);
+  return _generateNextLineInPath(startPoint, radius, weightMap, lineLength, curvedPath);
+};
+
+/**
+ * Returns a boolean based on wether the given line intersects with the provided curves
+ * @param line the line segment to check
+ * @param curves the curves the provided line cannot intersect with
+ */
+const doesLineCollideWithCurves = (line: LineCurve, curves: Curve<Vector2>[]): boolean => {
+  return !!curves.find((curve) => doLinesIntersect(line.v1, line.v2, curve.getPoint(0), curve.getPoint(1)));
+};
+
+const doLinesIntersect = (p1: Vector2, q1: Vector2, p2: Vector2, q2: Vector2): boolean => {
+  const o1 = getOrientationOfTriplet(p1, q1, p2);
+  const o2 = getOrientationOfTriplet(p1, q1, q2);
+  const o3 = getOrientationOfTriplet(p2, q2, p1);
+  const o4 = getOrientationOfTriplet(p2, q2, q1);
+
+  if (o1 !== o2 && o3 !== o4) return true;
+  
+  // Line Segments are Collinear
+  const p2LiesOnSegment = o1 === 0 && isPointOnSegment(p1, q1, p2);
+  const q2LiesOnSegment = o2 === 0 && isPointOnSegment(p1, q1, q2);
+  const p1LiesOnSegment = o3 === 0 && isPointOnSegment(p2, q2, p1);
+  const q1LiesOnSegment = o4 === 0 && isPointOnSegment(p2, q2, q1);
+
+  return p2LiesOnSegment || q2LiesOnSegment || p1LiesOnSegment || q1LiesOnSegment;
+};
+
+const isPointOnSegment = (p: Vector2, q: Vector2, point: Vector2) => {
+  const liestBetweenX = Math.min(p.x, q.x) <= point.x && Math.max(p.x, q.x) >= point.x;
+  const liestBetweenY = Math.min(p.y, q.y) <= point.y && Math.max(p.y, q.y) >= point.y;
+  return liestBetweenX && liestBetweenY;
+};
+
+enum ORIENTATION {
+  'COLLINEAR',
+  'CLOCKWISE',
+  'COUNTER_CLOCKWISE',
+}
+/**
+* @description Return 0 for collinear, negative for counterClockwise, positive for clockwise
+*/
+const getOrientationOfTriplet = (p1: Vector2, p2: Vector2, p3: Vector2) => {
+  const orientation = ((p2.y - p1.y)*(p3.x - p2.x)) - ((p3.y - p2.y)*(p2.x - p1.x));
+  if (orientation === 0) return ORIENTATION.COLLINEAR;
+  return orientation < 0 ? ORIENTATION.COUNTER_CLOCKWISE : ORIENTATION.CLOCKWISE;
 };
 
 const isDegreeWithinBuffer = (degree: number, targetDegree: number) => {
@@ -173,97 +269,134 @@ const getDegreeFromPoint = (origin: Vector2, point: Vector2) => {
   return radiansToDegrees(radians);
 };
 
-const getDisplacement = (start: number, radius: number) => {
-  const percentToBorder = Math.abs(start) / radius;
-  // Grows larger the closer to the starting point is to the border
+/**
+ * Generates the lines needed to connect the first and last point of a line along the border of a square
+ * @param waterline a curved path that begins and ends on the radius of a square
+ * @param radius half of the width of the square
+ */
+const getRemaingWaterPathLines = (waterline: CurvePath<Vector2>, radius: number): LineCurve[] => {
+  const curves = waterline.curves;
+  const startCurve = curves.at(0);
+  const endCurve = curves.at(-1);
+  if (!startCurve || !endCurve && startCurve !== endCurve) throw new Error('Start and end curve must be defined');
 
-  const displacement = getRandomNumber(0, CURVE_LENGTH);
-};
-
-const getRemaingWaterPath = (startPoint: Vector2, endPoint: Vector2, radius: number) => {
+  const startPoint = startCurve.getPoint(0);
+  const endPoint = endCurve.getPoint(1);
   const xDiff = endPoint.x - startPoint.x;
   const yDiff = endPoint.y - startPoint.y;
-  // Points are on the same side TODO: Support points on same side
-  if (yDiff === 0 || xDiff === 0) {
+
+  const waterEndsOnSameBorder = yDiff === 0 || xDiff === 0;
+  if (waterEndsOnSameBorder) {
     return [];
   }
-  const points = [startPoint, endPoint];
-  // Points are on opposite sides
-  if (Math.abs(yDiff) === radius * 2 || Math.abs(xDiff) === radius * 2) {
-    // Points are on bottom and top of map
-    if (Math.abs(yDiff) === radius * 2) {
-      if (yDiff < 0) {
-        // Left-half
-        return [
-          new Vector2(-radius, -radius),
-          new Vector2(-radius, radius),
-        ];
-      }
-      // Right-half
-      return [
-        new Vector2(radius, radius),
-        new Vector2(radius, -radius),
-      ];
-    }
-    if (xDiff < 0) {
-      // Top-half
-      return [
-        new Vector2(-radius, radius),
-        new Vector2(radius, radius),
-      ];
-    }
-    // Bottom-half
-    return [
-      new Vector2(radius, -radius),
-      new Vector2(-radius, -radius),
-    ];
+
+  const waterEndsOnOppositeBorders = Math.abs(yDiff) === radius * 2 || Math.abs(xDiff) === radius * 2;
+  if (waterEndsOnOppositeBorders) {
+    return getLinesConnectingOpposingBorders(startPoint, endPoint, radius);
   }
 
-  if (endPoint.y === -radius) {
-    // Top-left Corner
-    points.push(new Vector2(-radius, -radius));
-    if (startPoint.x === radius) {
-      points.push(
-        new Vector2(-radius, radius),
-        new Vector2(radius, radius),
+  return getLinesConnectingAdjacentBorders(startPoint, endPoint, radius);
+};
+
+/**
+ * Generates the lines needed to connect two points on opposite sides in a clockwise fashion along a square's border
+ * @param p1 the point in which the generated lines will end on
+ * @param p2 the point the lines will start generating from
+ * @param radius half of the width of the square
+ */
+const getLinesConnectingOpposingBorders = (p1: Vector2, p2: Vector2, radius: number) => {
+  const lineCurves = [];
+  const topLeftCorner = new Vector2(-radius, radius);
+  const topRightCorner = new Vector2(radius, radius);
+  const bottomRightCorner = new Vector2(radius, -radius);
+  const bottomLeftCorner = new Vector2(-radius, -radius);
+  if (p2.x === -radius) {
+    lineCurves.push(
+      new LineCurve(p2, topLeftCorner),
+      new LineCurve(topLeftCorner, topRightCorner),
+      new LineCurve(topRightCorner, p1),
+    );
+  }
+  if (p2.x === radius) {
+    lineCurves.push(
+      new LineCurve(p2, bottomRightCorner),
+      new LineCurve(bottomRightCorner, bottomLeftCorner),
+      new LineCurve(bottomLeftCorner, p1),
+    );
+  }
+  if (p2.y === -radius) {
+    lineCurves.push(
+      new LineCurve(p2, bottomLeftCorner),
+      new LineCurve(bottomLeftCorner, topLeftCorner),
+      new LineCurve(topLeftCorner, p1),
+    );
+  }
+  if (p2.y === radius) {
+    lineCurves.push(
+      new LineCurve(p2, topRightCorner),
+      new LineCurve(topRightCorner, bottomRightCorner),
+      new LineCurve(bottomRightCorner, p1),
+    );
+  }
+  return lineCurves;
+}
+
+/**
+ * Generates the lines needed to connect two points on adjacent sides in a clockwise fashion along a square's border
+ * @param p1 the point in which the generated lines will end on
+ * @param p2 the point the lines will start generating from
+ * @param radius half of the width of the square
+ */
+const getLinesConnectingAdjacentBorders = (p1: Vector2, p2: Vector2, radius: number) => {
+  const lineCurves = [];
+  const topLeftCorner = new Vector2(-radius, radius);
+  const topRightCorner = new Vector2(radius, radius);
+  const bottomRightCorner = new Vector2(radius, -radius);
+  const bottomLeftCorner = new Vector2(-radius, -radius);
+  if (p2.x === -radius) {
+    lineCurves.push(new LineCurve(p2, topLeftCorner));
+    if (p1.y === -radius) {
+      lineCurves.push(
+        new LineCurve(topLeftCorner, topRightCorner),
+        new LineCurve(topRightCorner, bottomRightCorner),
       );
     }
   }
-  if (endPoint.x === -radius) {
-    points.push(new Vector2(-radius, radius));
-    if (startPoint.y === -radius) {
-      points.push(
-        new Vector2(radius, radius),
-        new Vector2(radius, -radius),
+  if (p2.x === radius) {
+    lineCurves.push(new LineCurve(p2, bottomRightCorner));
+    if (p1.y === radius) {
+      lineCurves.push(
+        new LineCurve(bottomRightCorner, bottomLeftCorner),
+        new LineCurve(bottomLeftCorner, topLeftCorner),
       );
     }
   }
-  if (endPoint.y === radius) {
-    points.push(new Vector2(radius, radius));
-    if (startPoint.x === -radius) {
-      points.push(
-        new Vector2(radius, -radius),
-        new Vector2(-radius, -radius),
+  if (p2.y === -radius) {
+    lineCurves.push(new LineCurve(p2, bottomLeftCorner));
+    if (p1.x === radius) {
+      lineCurves.push(
+        new LineCurve(bottomLeftCorner, topLeftCorner),
+        new LineCurve(topLeftCorner, topRightCorner),
       );
     }
   }
-  if (endPoint.x === radius) {
-    points.push(new Vector2(radius, -radius));
-    if (startPoint.y === radius) {
-      points.push(
-        new Vector2(-radius, -radius),
-        new Vector2(-radius, radius),
+  if (p2.y === radius) {
+    lineCurves.push(new LineCurve(p2, topRightCorner));
+    if (p1.x === -radius) {
+      lineCurves.push(
+        new LineCurve(topRightCorner, bottomRightCorner),
+        new LineCurve(bottomRightCorner, bottomLeftCorner),
       );
     }
   }
-  return points;
+  return lineCurves;
 };
 
 /**
  * Generates a random point on the border of a square within the radius limit divisor
  * @param radius half of the width of the square
  */
-const generatePointInSquare = (radius: number) => {
+const generatePointOnBorderOfSquare = (radius: number): Vector2 => {
   const randomSide = getRandomInt(0, 3);
   // Bound the point to a location near one of the two corners
   const rangeFromRadius = radius / RADIUS_LIMIT_DIVISOR;
@@ -279,5 +412,7 @@ const generatePointInSquare = (radius: number) => {
     new Vector2(startingLoc, radius),  // Bottom
     new Vector2(startingLoc, -radius), // Top
   ];
-  return sidesMap[randomSide];
+  const chosenSide = sidesMap[randomSide];
+  if (!chosenSide) throw new Error('Invalid chosen side for start point');
+  return chosenSide;
 };

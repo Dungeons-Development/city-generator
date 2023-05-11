@@ -4,7 +4,7 @@ import { Vector2 } from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls';
 
 import { Node } from './classes/node';
-import { getWaterFrontMesh } from './utils/shapes/bezier-curve';
+import { generateWaterfrontMesh, generateWaterLine } from './utils/shapes/bezier-curve';
 
 document.querySelector<HTMLDivElement>('#app').innerHTML = `
   <div id="display"></div>
@@ -80,7 +80,7 @@ class Main {
 
     this.addDrawingRect(container.offsetWidth, container.offsetHeight);
     this.addBorders(radius);
-    this.addWaterFront(parameters.userInput?.water);
+    this.addWaterFront(25);
     
     this.animate();
   }
@@ -124,9 +124,10 @@ class Main {
     this.scene.add(line);
   }
   
-  addWaterFront = (waterPath?: Vector2[]) => {
-    const mesh = getWaterFrontMesh(this.radius, waterPath);
-    this.scene.add(mesh);
+  addWaterFront = (radius: number) => {
+    const waterline = generateWaterLine(radius);
+    const waterfrontMesh = generateWaterfrontMesh(waterline, radius);
+    this.scene.add(waterfrontMesh);
     this.animate();
   }
 }

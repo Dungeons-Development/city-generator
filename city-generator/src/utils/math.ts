@@ -8,11 +8,11 @@ export const pythagoreanTheorem = (p1: Vector2, p2: Vector2) => {
   return Math.sqrt((x2 - x1)**2 + (y2 - y1)**2);
 };
 
-export const getSlope = (p1: Vector2, p2: Vector2) => {
-  const x1 = p1.x;
-  const y1 = p1.y;
-  const x2 = p2.x;
-  const y2 = p2.y;
+export const getSlope = (origin: Vector2, target: Vector2) => {
+  const x1 = origin.x;
+  const y1 = origin.y;
+  const x2 = target.x;
+  const y2 = target.y;
   return (y2 - y1)/(x2 - x1);
 };
 
@@ -23,14 +23,18 @@ export const getRandomNumber = (min: number, max: number) => {
 export interface WeightMap {
   [key:number]: number;
 }
-export const getWeightedNumber = (weightMap: WeightMap) => {
+export const getWeightedNumber = (weightMap: WeightMap): number => {
   const keys: number[] = [];
   for (const key in weightMap) {
-    for (let i = 0; i < weightMap[key]; i++) {
+    const numberOfOccurences = weightMap[key];
+    if (numberOfOccurences === undefined) throw new Error('Error parsing weight map keys');
+    for (let i = 0; i < numberOfOccurences; i++) {
       keys.push(parseInt(key));
     }
   }
-  return keys[Math.floor(Math.random() * keys.length)];
+  const weightedNumber = keys[Math.floor(Math.random() * keys.length)];
+  if (weightedNumber === undefined) throw new Error('Error choosing weighted number');
+  return weightedNumber;
 };
 
 /**
@@ -55,5 +59,6 @@ export const radiansToY = (radians: number, radius: number) => {
 };
 
 export const radiansToDegrees = (radians: number) => {
-  return radians * (180 / Math.PI);
+  const degrees = parseFloat((radians * (180 / Math.PI)).toFixed(2));
+  return degrees > 0 ? degrees : 360 + degrees;
 };
