@@ -5,21 +5,21 @@ const RADIUS_LIMIT_DIVISOR = 5;
 const LINE_RESOLUTION = 1000;
 const TOTAL_DEGREES = 360;
 const DEGREE_RESOLUTION = 4;
-const DEGREE_BUFFER = 5;
 const MIN_WATERFRONT_LENGTH_RATIO = 1.5;
 const WEIGHT_MAP = {
   PREVIOUS_POINT: 1,
-  OUTSIDE_CLAMP: 0,
-  CENTER: 3,
-  CENTER_AFTER_BAN: 0,
+  CENTER: 4,
+  CENTER_AFTER_BAN: 1,
   BORDER: 1,
   BORDER_AFTER_SEEK: 6,
   DEFAULT: 3,
 };
 const LINE_DISTANCE_MIN = 2;
 const LINE_DISTANCE_MAX = 5;
-const ALLOWED_LINE_DEGREE_CHANGE = 60;
-const BAN_CENTER_MOVEMENT_AT_RATIO = 0.8;
+const PREVIOUS_POINT_BUFFER = 30;
+const BORDER_BUFFER = 60;
+const CENTER_BUFFER = 30;
+const BAN_CENTER_MOVEMENT_AT_PERCENT = 80;
 const SEEK_BORDER_AT_RATIO = 1.25;
 
 /**
@@ -127,30 +127,24 @@ const isLineOutsideSquare = (line: LineCurve, radius: number) => {
  */
 const generateNextLineInPath = (startPoint: Vector2, curvedPath: CurvePath<Vector2>, radius: number, lineLength: number) => {
   const previousCurve = curvedPath.curves.at(-1);
-  let degreeToPreviousPoint, degreeOfContinuedSlope;
+  let degreeToPreviousPoint;
   if (previousCurve) {
     degreeToPreviousPoint = getDegreeFromPoint(startPoint, previousCurve.getPoint(1));
-    degreeOfContinuedSlope = (180 + degreeToPreviousPoint) % 360;
   }
   const degreeToCenter = getDegreeFromPoint(startPoint, new Vector2(0, 0));
-  const degreeToClosestBorder = getDegreeFromPoint(
-    startPoint,
-    getClosestBorder(startPoint, radius)
-  );
+  const degreeToClosestBorder = getDegreeToClosestBorder(startPoint);
   const weightMap = {} as WeightMap;
   for(let scaledDegree = 0; scaledDegree < TOTAL_DEGREES / DEGREE_RESOLUTION; scaledDegree++) {
     const degree = scaledDegree * DEGREE_RESOLUTION;
-    if (degreeOfContinuedSlope && Math.abs(degreeOfContinuedSlope - degree) > ALLOWED_LINE_DEGREE_CHANGE) {
-      weightMap[degree] = 0;
-    } else if (degreeToPreviousPoint && isDegreeWithinBuffer(degree, degreeToPreviousPoint)) {
+    if (degreeToPreviousPoint && isDegreeWithinBuffer(degree, degreeToPreviousPoint, PREVIOUS_POINT_BUFFER)) {
       const isPointingAtPrevious = degree === degreeToPreviousPoint;
       weightMap[degree] = isPointingAtPrevious ? 0 : WEIGHT_MAP.PREVIOUS_POINT;
-    } else if (isDegreeWithinBuffer(degree, degreeToCenter)) {
+    } else if (isDegreeWithinBuffer(degree, degreeToCenter, CENTER_BUFFER)) {
       const distanceToCenter = pythagoreanTheorem(startPoint, new Vector2(0, 0));
       const percentToCenter = distanceToCenter / radius;
-      const isBan = percentToCenter > BAN_CENTER_MOVEMENT_AT_RATIO;
+      const isBan = percentToCenter > BAN_CENTER_MOVEMENT_AT_PERCENT;
       weightMap[degree] = isBan ? WEIGHT_MAP.CENTER_AFTER_BAN : WEIGHT_MAP.CENTER;
-    } else if (isDegreeWithinBuffer(degree, degreeToClosestBorder)) {
+    } else if (isDegreeWithinBuffer(degree, degreeToClosestBorder, BORDER_BUFFER)) {
       const lengthRadiusRatio = lineLength / radius;
       const seekBorder = lengthRadiusRatio > SEEK_BORDER_AT_RATIO;
       weightMap[degree] = seekBorder ? WEIGHT_MAP.BORDER_AFTER_SEEK : WEIGHT_MAP.BORDER;
@@ -237,23 +231,16 @@ const getOrientationOfTriplet = (p1: Vector2, p2: Vector2, p3: Vector2) => {
   return orientation < 0 ? ORIENTATION.COUNTER_CLOCKWISE : ORIENTATION.CLOCKWISE;
 };
 
-const isDegreeWithinBuffer = (degree: number, targetDegree: number) => {
-  const isGreaterThanLowerBound = degree > targetDegree - DEGREE_BUFFER;
-  const isLessThanUpperBound = degree < targetDegree + DEGREE_BUFFER;
-  return isGreaterThanLowerBound && isLessThanUpperBound;
-};
-
-const getClosestBorder = (point: Vector2, radius: number) => {
-  if (Math.abs(point.x) > Math.abs(point.y)) {
-    return new Vector2(
-      point.x > 0 ? radius : -radius,
-      point.y
-    );
+const isDegreeWithinBuffer = (degree: number, targetDegree: number, buffer: number) => {
+  const lowerBoundRange = targetDegree - buffer;
+  const upperBoundRange = targetDegree + buffer;
+  if (lowerBoundRange < 0) {
+    return degree > 360 + lowerBoundRange || degree < upperBoundRange;
   }
-  return new Vector2(
-    point.x,
-    point.y > 0 ? radius : -radius,
-  );
+  if (upperBoundRange > 360) {
+    return degree > lowerBoundRange || degree < upperBoundRange % 360;
+  }
+  return degree > lowerBoundRange && degree < upperBoundRange;
 };
 
 const getPointFromDegree = (origin: Vector2, distanceFromPoint: number, degree: number) => {
@@ -266,8 +253,22 @@ const getPointFromDegree = (origin: Vector2, distanceFromPoint: number, degree: 
 const getDegreeFromPoint = (origin: Vector2, point: Vector2) => {
   const vector2 = new Vector2(point.x - origin.x, point.y - origin.y);
   const radians = Math.atan2(vector2.y, vector2.x);
-  return radiansToDegrees(radians);
+  return radiansToDegrees(radians) % 360;
 };
+
+enum BORDER_DEGREES {
+  TOP = 90,
+  LEFT = 180,
+  BOTTOM = 270,
+  RIGHT = 0,
+}
+const getDegreeToClosestBorder = (point: Vector2): number => {
+  const { x, y } = point;
+  if (Math.abs(x) > Math.abs(y)) {
+    return x > 0 ? BORDER_DEGREES.RIGHT : BORDER_DEGREES.LEFT;
+  }
+  return y > 0 ? BORDER_DEGREES.TOP : BORDER_DEGREES.BOTTOM;
+}
 
 /**
  * Generates the lines needed to connect the first and last point of a line along the border of a square
@@ -305,91 +306,91 @@ const getRemaingWaterPathLines = (waterline: CurvePath<Vector2>, radius: number)
  * @param radius half of the width of the square
  */
 const getLinesConnectingOpposingBorders = (p1: Vector2, p2: Vector2, radius: number) => {
-  const lineCurves = [];
   const topLeftCorner = new Vector2(-radius, radius);
   const topRightCorner = new Vector2(radius, radius);
   const bottomRightCorner = new Vector2(radius, -radius);
   const bottomLeftCorner = new Vector2(-radius, -radius);
-  if (p2.x === -radius) {
-    lineCurves.push(
-      new LineCurve(p2, topLeftCorner),
-      new LineCurve(topLeftCorner, topRightCorner),
-      new LineCurve(topRightCorner, p1),
-    );
+  if (Math.abs(p2.x) === radius) {
+    const smallestAreaIsBottom = p1.y + p2.y < 0;
+    if (smallestAreaIsBottom) {
+      return p2.x > 0 ?
+        [
+          new LineCurve(p2, bottomRightCorner),
+          new LineCurve(bottomRightCorner, bottomLeftCorner),
+        ] : [
+          new LineCurve(p2, bottomLeftCorner),
+          new LineCurve(bottomLeftCorner, bottomRightCorner),
+        ];
+    }
+    return p2.x > 0 ?
+      [
+        new LineCurve(p2, topRightCorner),
+        new LineCurve(topRightCorner, topLeftCorner),
+      ] : [
+        new LineCurve(p2, topLeftCorner),
+        new LineCurve(topLeftCorner, topRightCorner),
+      ];
   }
-  if (p2.x === radius) {
-    lineCurves.push(
-      new LineCurve(p2, bottomRightCorner),
-      new LineCurve(bottomRightCorner, bottomLeftCorner),
-      new LineCurve(bottomLeftCorner, p1),
-    );
+  if (Math.abs(p2.y) === radius) {
+    const smallestAreaIsLeft = p1.x + p2.x < 0;
+    if (smallestAreaIsLeft) {
+      return p2.y > 0 ?
+        [
+          new LineCurve(p2, topLeftCorner),
+          new LineCurve(topLeftCorner, bottomLeftCorner),
+        ] : [
+          new LineCurve(p2, bottomLeftCorner),
+          new LineCurve(bottomLeftCorner, topLeftCorner),
+        ];
+    }
+    return p2.y > 0 ?
+      [
+        new LineCurve(p2, topRightCorner),
+        new LineCurve(topRightCorner, bottomRightCorner),
+      ] : [
+        new LineCurve(p2, bottomRightCorner),
+        new LineCurve(bottomRightCorner, topRightCorner),
+      ];
   }
-  if (p2.y === -radius) {
-    lineCurves.push(
-      new LineCurve(p2, bottomLeftCorner),
-      new LineCurve(bottomLeftCorner, topLeftCorner),
-      new LineCurve(topLeftCorner, p1),
-    );
-  }
-  if (p2.y === radius) {
-    lineCurves.push(
-      new LineCurve(p2, topRightCorner),
-      new LineCurve(topRightCorner, bottomRightCorner),
-      new LineCurve(bottomRightCorner, p1),
-    );
-  }
-  return lineCurves;
+  throw new Error('Something went wrong in connecting points across opposing borders');
 }
 
 /**
- * Generates the lines needed to connect two points on adjacent sides in a clockwise fashion along a square's border
+ * Generates the lines needed to connect two points within the smallest area along a squares border
  * @param p1 the point in which the generated lines will end on
  * @param p2 the point the lines will start generating from
  * @param radius half of the width of the square
  */
 const getLinesConnectingAdjacentBorders = (p1: Vector2, p2: Vector2, radius: number) => {
-  const lineCurves = [];
   const topLeftCorner = new Vector2(-radius, radius);
   const topRightCorner = new Vector2(radius, radius);
   const bottomRightCorner = new Vector2(radius, -radius);
   const bottomLeftCorner = new Vector2(-radius, -radius);
   if (p2.x === -radius) {
-    lineCurves.push(new LineCurve(p2, topLeftCorner));
-    if (p1.y === -radius) {
-      lineCurves.push(
-        new LineCurve(topLeftCorner, topRightCorner),
-        new LineCurve(topRightCorner, bottomRightCorner),
-      );
+    if (p1.y === radius) {
+        return [new LineCurve(p2, topLeftCorner)];
     }
+    return [new LineCurve(p2, bottomLeftCorner)];
   }
   if (p2.x === radius) {
-    lineCurves.push(new LineCurve(p2, bottomRightCorner));
     if (p1.y === radius) {
-      lineCurves.push(
-        new LineCurve(bottomRightCorner, bottomLeftCorner),
-        new LineCurve(bottomLeftCorner, topLeftCorner),
-      );
+      return [new LineCurve(p2, topRightCorner)];
     }
+    return [new LineCurve(p2, bottomRightCorner)];
   }
   if (p2.y === -radius) {
-    lineCurves.push(new LineCurve(p2, bottomLeftCorner));
     if (p1.x === radius) {
-      lineCurves.push(
-        new LineCurve(bottomLeftCorner, topLeftCorner),
-        new LineCurve(topLeftCorner, topRightCorner),
-      );
+      return [new LineCurve(p2, bottomRightCorner)];
     }
+    return [new LineCurve(p2, bottomLeftCorner)];
   }
   if (p2.y === radius) {
-    lineCurves.push(new LineCurve(p2, topRightCorner));
-    if (p1.x === -radius) {
-      lineCurves.push(
-        new LineCurve(topRightCorner, bottomRightCorner),
-        new LineCurve(bottomRightCorner, bottomLeftCorner),
-      );
+    if (p1.x === radius) {
+      return [new LineCurve(p2, topRightCorner)];
     }
+    return [new LineCurve(p2, topLeftCorner)];
   }
-  return lineCurves;
+  throw new Error('Something went wrong in connecting points across adjacent borders');
 };
 
 /**
